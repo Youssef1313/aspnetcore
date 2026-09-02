@@ -1,9 +1,6 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-using Microsoft.JSInterop.Infrastructure;
-using Moq;
-
 namespace Microsoft.JSInterop;
 
 public class JSRuntimeExtensionsTest
@@ -14,21 +11,22 @@ public class JSRuntimeExtensionsTest
         // Arrange
         var method = "someMethod";
         var expected = new[] { "a", "b" };
-        var jsRuntime = new Mock<IJSRuntime>(MockBehavior.Strict);
-        jsRuntime.Setup(s => s.InvokeAsync<string>(method, It.IsAny<object[]>()))
-            .Callback<string, object[]>((method, args) =>
+        var jsRuntime = new FakeJSRuntime
+        {
+            OnInvokeAsync = (identifier, args) =>
             {
+                Assert.Equal(method, identifier);
                 Assert.Equal(expected, args);
-            })
-            .Returns(new ValueTask<string>("Hello"))
-            .Verifiable();
+                return "Hello";
+            },
+        };
 
         // Act
-        var result = await jsRuntime.Object.InvokeAsync<string>(method, "a", "b");
+        var result = await jsRuntime.InvokeAsync<string>(method, "a", "b");
 
         // Assert
         Assert.Equal("Hello", result);
-        jsRuntime.Verify();
+        Assert.Equal(1, jsRuntime.InvokeAsyncCallCount);
     }
 
     [Fact]
@@ -38,21 +36,23 @@ public class JSRuntimeExtensionsTest
         var method = "someMethod";
         var expected = new[] { "a", "b" };
         var cancellationToken = new CancellationToken();
-        var jsRuntime = new Mock<IJSRuntime>(MockBehavior.Strict);
-        jsRuntime.Setup(s => s.InvokeAsync<string>(method, cancellationToken, It.IsAny<object[]>()))
-            .Callback<string, CancellationToken, object[]>((method, cts, args) =>
+        var jsRuntime = new FakeJSRuntime
+        {
+            OnInvokeAsyncWithCancellationToken = (identifier, token, args) =>
             {
+                Assert.Equal(method, identifier);
+                Assert.Equal(cancellationToken, token);
                 Assert.Equal(expected, args);
-            })
-            .Returns(new ValueTask<string>("Hello"))
-            .Verifiable();
+                return "Hello";
+            },
+        };
 
         // Act
-        var result = await jsRuntime.Object.InvokeAsync<string>(method, cancellationToken, "a", "b");
+        var result = await jsRuntime.InvokeAsync<string>(method, cancellationToken, "a", "b");
 
         // Assert
         Assert.Equal("Hello", result);
-        jsRuntime.Verify();
+        Assert.Equal(1, jsRuntime.InvokeAsyncCallCount);
     }
 
     [Fact]
@@ -61,13 +61,21 @@ public class JSRuntimeExtensionsTest
         // Arrange
         var method = "someMethod";
         var args = new[] { "a", "b" };
-        var jsRuntime = new Mock<IJSRuntime>(MockBehavior.Strict);
-        jsRuntime.Setup(s => s.InvokeAsync<IJSVoidResult>(method, args)).Returns(new ValueTask<IJSVoidResult>(Mock.Of<IJSVoidResult>()));
+        var jsRuntime = new FakeJSRuntime
+        {
+            OnInvokeAsync = (identifier, actualArgs) =>
+            {
+                Assert.Equal(method, identifier);
+                Assert.Equal(args, actualArgs);
+                return FakeJSVoidResult.Instance;
+            },
+        };
 
         // Act
-        await jsRuntime.Object.InvokeVoidAsync(method, args);
+        await jsRuntime.InvokeVoidAsync(method, args);
 
-        jsRuntime.Verify();
+        // Assert
+        Assert.Equal(1, jsRuntime.InvokeAsyncCallCount);
     }
 
     [Fact]
@@ -76,13 +84,21 @@ public class JSRuntimeExtensionsTest
         // Arrange
         var method = "someMethod";
         var args = new[] { "a", "b" };
-        var jsRuntime = new Mock<IJSRuntime>(MockBehavior.Strict);
-        jsRuntime.Setup(s => s.InvokeAsync<IJSVoidResult>(method, It.IsAny<CancellationToken>(), args)).Returns(new ValueTask<IJSVoidResult>(Mock.Of<IJSVoidResult>()));
+        var jsRuntime = new FakeJSRuntime
+        {
+            OnInvokeAsyncWithCancellationToken = (identifier, token, actualArgs) =>
+            {
+                Assert.Equal(method, identifier);
+                Assert.Equal(args, actualArgs);
+                return FakeJSVoidResult.Instance;
+            },
+        };
 
         // Act
-        await jsRuntime.Object.InvokeVoidAsync(method, new CancellationToken(), args);
+        await jsRuntime.InvokeVoidAsync(method, new CancellationToken(), args);
 
-        jsRuntime.Verify();
+        // Assert
+        Assert.Equal(1, jsRuntime.InvokeAsyncCallCount);
     }
 
     [Fact]
@@ -92,21 +108,26 @@ public class JSRuntimeExtensionsTest
         var expected = "Hello";
         var method = "someMethod";
         var args = new[] { "a", "b" };
-        var jsRuntime = new Mock<IJSRuntime>(MockBehavior.Strict);
-        jsRuntime.Setup(s => s.InvokeAsync<string>(method, It.IsAny<CancellationToken>(), args))
-            .Callback<string, CancellationToken, object[]>((method, cts, args) =>
+        var jsRuntime = new FakeJSRuntime
+        {
+            OnInvokeAsyncWithCancellationToken = (identifier, token, actualArgs) =>
             {
+                Assert.Equal(method, identifier);
+                Assert.Equal(args, actualArgs);
+
                 // There isn't a very good way to test when the cts will cancel. We'll just verify that
                 // it'll get cancelled eventually.
-                Assert.True(cts.CanBeCanceled);
-            })
-            .Returns(new ValueTask<string>(expected));
+                Assert.True(token.CanBeCanceled);
+                return expected;
+            },
+        };
 
         // Act
-        var result = await jsRuntime.Object.InvokeAsync<string>(method, TimeSpan.FromMinutes(5), args);
+        var result = await jsRuntime.InvokeAsync<string>(method, TimeSpan.FromMinutes(5), args);
 
+        // Assert
         Assert.Equal(expected, result);
-        jsRuntime.Verify();
+        Assert.Equal(1, jsRuntime.InvokeAsyncCallCount);
     }
 
     [Fact]
@@ -116,20 +137,24 @@ public class JSRuntimeExtensionsTest
         var expected = "Hello";
         var method = "someMethod";
         var args = new[] { "a", "b" };
-        var jsRuntime = new Mock<IJSRuntime>(MockBehavior.Strict);
-        jsRuntime.Setup(s => s.InvokeAsync<string>(method, It.IsAny<CancellationToken>(), args))
-            .Callback<string, CancellationToken, object[]>((method, cts, args) =>
+        var jsRuntime = new FakeJSRuntime
+        {
+            OnInvokeAsyncWithCancellationToken = (identifier, token, actualArgs) =>
             {
-                Assert.False(cts.CanBeCanceled);
-                Assert.True(cts == CancellationToken.None);
-            })
-            .Returns(new ValueTask<string>(expected));
+                Assert.Equal(method, identifier);
+                Assert.Equal(args, actualArgs);
+                Assert.False(token.CanBeCanceled);
+                Assert.True(token == CancellationToken.None);
+                return expected;
+            },
+        };
 
         // Act
-        var result = await jsRuntime.Object.InvokeAsync<string>(method, Timeout.InfiniteTimeSpan, args);
+        var result = await jsRuntime.InvokeAsync<string>(method, Timeout.InfiniteTimeSpan, args);
 
+        // Assert
         Assert.Equal(expected, result);
-        jsRuntime.Verify();
+        Assert.Equal(1, jsRuntime.InvokeAsyncCallCount);
     }
 
     [Fact]
@@ -138,20 +163,25 @@ public class JSRuntimeExtensionsTest
         // Arrange
         var method = "someMethod";
         var args = new[] { "a", "b" };
-        var jsRuntime = new Mock<IJSRuntime>(MockBehavior.Strict);
-        jsRuntime.Setup(s => s.InvokeAsync<IJSVoidResult>(method, It.IsAny<CancellationToken>(), args))
-            .Callback<string, CancellationToken, object[]>((method, cts, args) =>
+        var jsRuntime = new FakeJSRuntime
+        {
+            OnInvokeAsyncWithCancellationToken = (identifier, token, actualArgs) =>
             {
+                Assert.Equal(method, identifier);
+                Assert.Equal(args, actualArgs);
+
                 // There isn't a very good way to test when the cts will cancel. We'll just verify that
                 // it'll get cancelled eventually.
-                Assert.True(cts.CanBeCanceled);
-            })
-            .Returns(new ValueTask<IJSVoidResult>(Mock.Of<IJSVoidResult>()));
+                Assert.True(token.CanBeCanceled);
+                return FakeJSVoidResult.Instance;
+            },
+        };
 
         // Act
-        await jsRuntime.Object.InvokeVoidAsync(method, TimeSpan.FromMinutes(5), args);
+        await jsRuntime.InvokeVoidAsync(method, TimeSpan.FromMinutes(5), args);
 
-        jsRuntime.Verify();
+        // Assert
+        Assert.Equal(1, jsRuntime.InvokeAsyncCallCount);
     }
 
     [Fact]
@@ -160,18 +190,22 @@ public class JSRuntimeExtensionsTest
         // Arrange
         var method = "someMethod";
         var args = new[] { "a", "b" };
-        var jsRuntime = new Mock<IJSRuntime>(MockBehavior.Strict);
-        jsRuntime.Setup(s => s.InvokeAsync<IJSVoidResult>(method, It.IsAny<CancellationToken>(), args))
-            .Callback<string, CancellationToken, object[]>((method, cts, args) =>
+        var jsRuntime = new FakeJSRuntime
+        {
+            OnInvokeAsyncWithCancellationToken = (identifier, token, actualArgs) =>
             {
-                Assert.False(cts.CanBeCanceled);
-                Assert.True(cts == CancellationToken.None);
-            })
-            .Returns(new ValueTask<IJSVoidResult>(Mock.Of<IJSVoidResult>()));
+                Assert.Equal(method, identifier);
+                Assert.Equal(args, actualArgs);
+                Assert.False(token.CanBeCanceled);
+                Assert.True(token == CancellationToken.None);
+                return FakeJSVoidResult.Instance;
+            },
+        };
 
         // Act
-        await jsRuntime.Object.InvokeVoidAsync(method, Timeout.InfiniteTimeSpan, args);
+        await jsRuntime.InvokeVoidAsync(method, Timeout.InfiniteTimeSpan, args);
 
-        jsRuntime.Verify();
+        // Assert
+        Assert.Equal(1, jsRuntime.InvokeAsyncCallCount);
     }
 }
