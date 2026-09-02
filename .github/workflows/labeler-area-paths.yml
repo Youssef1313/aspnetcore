@@ -15,7 +15,7 @@ on:
   pull_request_target:
     types: [opened, reopened]
     branches:
-      - main
+      - dev/ygerges/gh-workflow-labeler
 
 permissions:
   contents: read
@@ -28,8 +28,7 @@ concurrency:
 
 jobs:
   label:
-    # Do not run on forks outside the 'dotnet' org.
-    if: ${{ github.repository_owner == 'dotnet' }}
+    if: ${{ github.repository_owner == 'Youssef1313' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
